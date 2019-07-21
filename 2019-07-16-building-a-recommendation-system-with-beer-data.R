@@ -1,4 +1,4 @@
-## ---- include = FALSE----------------------------------------------------
+## Libraries
 library(readr)
 library(dplyr)
 library(Matrix)
@@ -17,13 +17,9 @@ conf$`sparklyr.shell.driver-memory` <- "20G"
 conf$spark.memory.fraction <- 0.6
 sc <- spark_connect(master = "local", config = conf, version = "2.1.0")
 
-
-## ---- include = TRUE-----------------------------------------------------
 beer_data <- spark_read_csv(sc, "beer_data_fin.csv")
 head(beer_data)
 
-
-## ------------------------------------------------------------------------
 # Find number of users in the data 
 num_users <- beer_data %>% group_by(user_id) %>% summarise(count = n()) %>%
              sdf_nrow
@@ -38,8 +34,6 @@ i <- beer_data %>%
 # Repeat user_id by the number of ratings associated with each user
 i <- rep(1:num_users, i)
 
-
-## ------------------------------------------------------------------------
 # Creating Spark dataframe with ids for each beer 
 beer_key <- beer_data %>% distinct(beer_full) %>% sdf_with_sequential_id
 
@@ -56,34 +50,25 @@ j <- left_join(beer_data, beer_key, by = "beer_full") %>%
 # Turning beer key (beers by unique id) from Spark dataframe to regular dataframe
 beer_key <- beer_key %>% collect
 
-
-## ------------------------------------------------------------------------
 # Sort data by user_id, bring data into R, and extract user_score vector 
 x <- beer_data %>% arrange(user_id) %>% select(user_score) %>% collect %>%
      .[["user_score"]]
 
-
-## ------------------------------------------------------------------------
+# Creating sparse matrix of beer ratings
 beer_sparse <- sparseMatrix(i = i, j = j, x = x)
 
-
-## ------------------------------------------------------------------------
 head(beer_sparse)
 
-
-## ------------------------------------------------------------------------
 beer_sparse_svd <- irlba(beer_sparse, 25)
 
-
-## ------------------------------------------------------------------------
 head(beer_sparse_svd$v)
 
 
- # Setting up and registering a cluster for parallel processing
+ # Setting up and registering a cluster for parallel processing #
  cl <- makeCluster(detectCores() - 1)
  registerDoParallel(cl)
  
- # Setting up the foreach loop and pre-loading packages used within the loop
+ # Setting up the foreach loop (this takes time to run)
  item_similarity_matrix <- foreach(i = 1:nrow(beer_key),
                               .packages = c("dplyr", "Matrix", "lsa")) %dopar% {
  
@@ -111,46 +96,28 @@ head(beer_sparse_svd$v)
  }
 
 
-## ---- echo = FALSE-------------------------------------------------------
-#load("item_similarity_matrix.RData")
-
-
-## ------------------------------------------------------------------------
 # Searching for Sculpin in the beer_key
 grep("Sculpin", beer_key$beer_full, value = TRUE)
 
-
-## ------------------------------------------------------------------------
 # Beers similar to Sculpin 
 item_similarity_matrix[grep("Sculpin", beer_key$beer_full)[6]]
 
-
-## ------------------------------------------------------------------------
 set.seed(123)
 item_similarity_matrix[base::sample(nrow(beer_key), 1)]
-
-
-## ------------------------------------------------------------------------
 
 # Creating a 24542-length vector of beer ratings for user 3
 example_user <- beer_sparse[3,]
 
-
-## ------------------------------------------------------------------------
 rated_beer_ids <- which(example_user != 0)
 
-
-## ------------------------------------------------------------------------
 sim_scores <- map(item_similarity_matrix, ~.x %>%
                     filter(id %in% rated_beer_ids) %>%
                     .[["score"]])
 
 
-## ------------------------------------------------------------------------
 candidate_beer_ids <- which(sim_scores %>% map(., ~length(.x) >= 5) %>% unlist)
 
 
-## ------------------------------------------------------------------------
 candidate_beer_ids <- candidate_beer_ids[!(candidate_beer_ids %in%
                                              rated_beer_ids)]
 
@@ -158,12 +125,9 @@ candidate_beer_ids <- candidate_beer_ids[!(candidate_beer_ids %in%
 length(candidate_beer_ids)
 
 
-## ------------------------------------------------------------------------
 denoms <- map(item_similarity_matrix[candidate_beer_ids], ~.x %>%
                 filter(id %in% rated_beer_ids) %>% .[["score"]] %>% sum)
 
-
-## ------------------------------------------------------------------------
 # List of similarity scores 
 sims_vecs <- map(item_similarity_matrix[candidate_beer_ids],
                  ~.x %>% filter(id %in% rated_beer_ids) %>% .[["score"]])
@@ -175,12 +139,8 @@ ratings_vecs <- map(item_similarity_matrix[candidate_beer_ids],
 
 nums <- map2(sims_vecs, ratings_vecs, ~sum(.x*.y))
 
-
-## ------------------------------------------------------------------------
 predicted_ratings <- map2(nums, denoms, ~.x/.y)
 
-
-## ------------------------------------------------------------------------
 pred_ratings_tbl <- tibble(beer_full = beer_key %>% 
                           filter(id %in% candidate_beer_ids) %>% .[["beer_full"]], 
                           pred_rating = predicted_ratings %>% unlist) %>%
@@ -188,25 +148,9 @@ pred_ratings_tbl <- tibble(beer_full = beer_key %>%
 head(pred_ratings_tbl)
 
 
-## ------------------------------------------------------------------------
 tibble(beer_full = beer_key[which(example_user != 0),] %>% .[["beer_full"]], 
        rating = example_user[which(example_user != 0)]) %>%
        arrange(desc(rating)) %>% head
-
-
-## ------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -218,28 +162,22 @@ input_vec[is.na(input_vec)] <- 0
 if(length(input_vec) != nrow(beer_key)){stop("Please enter a 24502-length vector!")}else if(
   length(test_vec[test_vec > 5 | test_vec < 0]) > 0){stop("Vector can only contain values between 0 and 5!")}
   
-## ------------------------------------------------------------------------
 rated_beer_ids <- which(input_vec != 0)
 
-## ------------------------------------------------------------------------
 sim_scores <- map(item_similarity_matrix, ~.x %>%
                     filter(id %in% rated_beer_ids) %>%
                     .[["score"]])
 
-## ------------------------------------------------------------------------
 candidate_beer_ids <- which(sim_scores %>% map(., ~length(.x) >= similarity_cutoff) %>% unlist)
 
 if(!is_empty(candidate_beer_ids)){
 
-## ------------------------------------------------------------------------
 candidate_beer_ids <- candidate_beer_ids[!(candidate_beer_ids %in%
                                              rated_beer_ids)]
 
-## ------------------------------------------------------------------------
 denoms <- map(item_similarity_matrix[candidate_beer_ids], ~.x %>%
                 filter(id %in% rated_beer_ids) %>% .[["score"]] %>% sum)
 
-## ------------------------------------------------------------------------
 # List of similarity scores 
 sims_vecs <- map(item_similarity_matrix[candidate_beer_ids],
                  ~.x %>% filter(id %in% rated_beer_ids) %>% .[["score"]])
@@ -251,10 +189,8 @@ ratings_vecs <- map(item_similarity_matrix[candidate_beer_ids],
 
 nums <- map2(sims_vecs, ratings_vecs, ~sum(.x*.y))
 
-## ------------------------------------------------------------------------
 predicted_ratings <- map2(nums, denoms, ~.x/.y)
 
-## ------------------------------------------------------------------------
 pred_ratings_tbl <- tibble(beer_full = beer_key %>% 
                              filter(id %in% candidate_beer_ids) %>% .[["beer_full"]], 
                            pred_rating = predicted_ratings %>% unlist) %>%
