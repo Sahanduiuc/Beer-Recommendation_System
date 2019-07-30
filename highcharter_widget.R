@@ -8,8 +8,7 @@ options(highcharter.lang = hcoptslang)
 thm <- hc_theme_merge(
   hc_theme_tufte(),
   hc_theme(
-    colors = c(hex_to_rgba("#ffffff", ".5"), 
-               hex_to_rgba("#f0027f", ".5"), 
+    colors = c(hex_to_rgba("#f0027f", ".5"), 
                hex_to_rgba("#fdc086", ".5"), 
                hex_to_rgba("#7fc97f", ".5"),
                hex_to_rgba("#f0f078", ".5"), 
